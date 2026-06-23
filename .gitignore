@@ -8,3 +8,4 @@ TestResults/
 coverage/
 node_modules/
 dist/
+.claude/
