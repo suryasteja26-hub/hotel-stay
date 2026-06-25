@@ -2,7 +2,7 @@ import { CurrencyPipe } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import {
   CANCELLATION_POLICY_LABELS,
-  ReservationResponse,
+  Reservation,
 } from '../models/hotel.models';
 
 @Component({
@@ -19,11 +19,15 @@ import {
       </p>
 
       <dl class="confirmation__details">
-        <div><dt>Provider</dt><dd>{{ reservation.provider }}</dd></div>
-        <div><dt>Destination</dt><dd>{{ reservation.destination }}</dd></div>
+        <div><dt>Provider</dt><dd>{{ reservation.providerId }}</dd></div>
+        <div><dt>Hotel</dt><dd>{{ reservation.hotelName }}</dd></div>
+        <div><dt>Destination</dt><dd>{{ reservation.city }}</dd></div>
         <div><dt>Room type</dt><dd>{{ reservation.roomType }}</dd></div>
-        <div><dt>Guest</dt><dd>{{ reservation.guestName }}</dd></div>
-        <div><dt>Total price</dt><dd>{{ reservation.totalPrice | currency: 'GBP' }}</dd></div>
+        <div><dt>Guest</dt><dd>{{ reservation.guest.fullName }}</dd></div>
+        <div>
+          <dt>Total price</dt>
+          <dd>{{ reservation.totalPrice | currency: reservation.currency }}</dd>
+        </div>
         <div><dt>Cancellation</dt><dd>{{ policyLabel }}</dd></div>
       </dl>
 
@@ -32,10 +36,12 @@ import {
   `,
 })
 export class ConfirmationComponent {
-  @Input({ required: true }) reservation!: ReservationResponse;
+  @Input({ required: true }) reservation!: Reservation;
   @Output() newSearch = new EventEmitter<void>();
 
   get policyLabel(): string {
-    return CANCELLATION_POLICY_LABELS[this.reservation.cancellationPolicy];
+    return this.reservation.cancellationPolicy
+      ? CANCELLATION_POLICY_LABELS[this.reservation.cancellationPolicy]
+      : '—';
   }
 }

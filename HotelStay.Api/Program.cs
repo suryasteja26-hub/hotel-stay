@@ -30,12 +30,17 @@ builder.Services.AddSingleton<DestinationRules>();
 builder.Services.AddSingleton<DocumentValidator>();
 builder.Services.AddSingleton<ReservationService>();
 builder.Services.AddSingleton<IReservationStore, InMemoryReservationStore>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 var app = builder.Build();
 
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors(AngularCorsPolicy);
+
+// Consistent ProblemDetails-compatible error envelope: { status, error, message }.
+static IResult Problem(int status, string error, string message) =>
+    Results.Json(new ApiError(status, error, message), statusCode: status);
 
 app.MapGet("/hotels/search", async (
     string? destination,
@@ -49,22 +54,22 @@ app.MapGet("/hotels/search", async (
         || string.IsNullOrWhiteSpace(checkIn)
         || string.IsNullOrWhiteSpace(checkOut))
     {
-        return Results.BadRequest(new { message = "destination, checkIn and checkOut are required." });
+        return Problem(400, "MissingParameter", "destination, checkIn and checkOut are required.");
     }
 
     if (!DateOnly.TryParse(checkIn, out var checkInDate))
     {
-        return Results.BadRequest(new { message = "checkIn must be a valid date (yyyy-MM-dd)." });
+        return Problem(400, "InvalidDate", "checkIn must be a valid date (yyyy-MM-dd).");
     }
 
     if (!DateOnly.TryParse(checkOut, out var checkOutDate))
     {
-        return Results.BadRequest(new { message = "checkOut must be a valid date (yyyy-MM-dd)." });
+        return Problem(400, "InvalidDate", "checkOut must be a valid date (yyyy-MM-dd).");
     }
 
     if (checkOutDate.DayNumber <= checkInDate.DayNumber)
     {
-        return Results.BadRequest(new { message = "checkOut must be after checkIn." });
+        return Problem(400, "InvalidDateRange", "checkOut must be after checkIn.");
     }
 
     RoomType? roomTypeFilter = null;
@@ -72,33 +77,35 @@ app.MapGet("/hotels/search", async (
     {
         if (!Enum.TryParse<RoomType>(roomType, ignoreCase: true, out var parsedRoomType))
         {
-            return Results.BadRequest(new { message = $"Unknown room type '{roomType}'." });
+            return Problem(400, "InvalidRoomType", $"Unknown room type '{roomType}'.");
         }
 
         roomTypeFilter = parsedRoomType;
     }
 
-    var request = new HotelSearchRequest(destination, checkInDate, checkOutDate, roomTypeFilter);
-    var results = await searchService.SearchAsync(request, cancellationToken);
+    var criteria = new SearchCriteria(destination, checkInDate, checkOutDate, roomTypeFilter);
+    var response = await searchService.SearchAsync(criteria, cancellationToken);
 
-    return Results.Ok(results);
+    return Results.Ok(response);
 })
 .WithName("SearchHotels");
 
 app.MapPost("/hotels/reserve", (
-    ReserveRoomRequest request,
+    ReserveRequest request,
     ReservationService reservationService) =>
 {
     var result = reservationService.Reserve(request);
 
     if (result.Succeeded)
     {
-        return Results.Ok(result.Reservation);
+        return Results.Created(
+            $"/hotels/reservation/{result.Reservation!.Reference}",
+            result.Reservation);
     }
 
     return result.ErrorKind == ReservationErrorKind.DocumentMismatch
-        ? Results.UnprocessableEntity(new { message = result.ErrorMessage })
-        : Results.BadRequest(new { message = result.ErrorMessage });
+        ? Problem(422, result.ErrorCode!, result.ErrorMessage!)
+        : Problem(400, result.ErrorCode!, result.ErrorMessage!);
 })
 .WithName("ReserveRoom");
 
@@ -110,7 +117,7 @@ app.MapGet("/hotels/reservation/{reference}", (
 
     return reservation is not null
         ? Results.Ok(reservation)
-        : Results.NotFound(new { message = $"Reservation '{reference}' was not found." });
+        : Problem(404, "NotFound", $"Reservation '{reference}' was not found.");
 })
 .WithName("GetReservation");
 

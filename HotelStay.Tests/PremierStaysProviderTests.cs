@@ -5,43 +5,59 @@ namespace HotelStay.Tests;
 
 public class PremierStaysProviderTests
 {
-    private static HotelSearchRequest Request(RoomType? roomType = null, int nights = 3) =>
-        new(
-            Destination: "Paris",
-            CheckIn: new DateOnly(2026, 7, 10),
-            CheckOut: new DateOnly(2026, 7, 10).AddDays(nights),
-            RoomType: roomType);
+    private static SearchCriteria Criteria(string city = "London", RoomType? roomType = null) =>
+        new(city, new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 13), roomType);
 
     [Fact]
-    public async Task Returns_normalized_rooms_for_all_room_types()
+    public async Task Maps_full_detail_offer_for_known_city()
     {
         var provider = new PremierStaysProvider();
 
-        var results = await provider.SearchAsync(Request(), CancellationToken.None);
+        var results = await provider.SearchAsync(Criteria("London"));
 
-        Assert.Contains(results, option => option.RoomType == RoomType.Standard);
-        Assert.Contains(results, option => option.RoomType == RoomType.Deluxe);
-        Assert.Contains(results, option => option.RoomType == RoomType.Suite);
-        Assert.All(results, option =>
-        {
-            Assert.Equal("PremierStays", option.Provider);
-            Assert.Equal("Paris", option.Destination);
-            Assert.True(option.PerNightRate > 0);
-        });
+        var deluxe = Assert.Single(results, o => o.RoomType == RoomType.Deluxe);
+        Assert.Equal("PremierStays", deluxe.ProviderId);
+        Assert.Equal("PS-LON-001", deluxe.HotelId);
+        Assert.Equal("Premier Thames View", deluxe.HotelName);
+        Assert.Equal("London", deluxe.City);
+        Assert.Equal(189.00m, deluxe.PricePerNight);
+        Assert.Equal("GBP", deluxe.Currency);
+        Assert.NotNull(deluxe.AvailableRooms);          // full provider supplies counts
+        Assert.False(string.IsNullOrWhiteSpace(deluxe.Description));
+        Assert.NotEmpty(deluxe.Amenities);
+        Assert.NotNull(deluxe.StarRating);
     }
 
     [Fact]
-    public async Task Calculates_total_price_as_rate_times_nights()
+    public async Task Returns_empty_for_unknown_city()
     {
         var provider = new PremierStaysProvider();
 
-        var results = await provider.SearchAsync(Request(nights: 5), CancellationToken.None);
+        var results = await provider.SearchAsync(Criteria("Atlantis"));
+
+        Assert.Empty(results);
+    }
+
+    [Fact]
+    public async Task Applies_roomType_filter()
+    {
+        var provider = new PremierStaysProvider();
+
+        var results = await provider.SearchAsync(Criteria("London", RoomType.Suite));
 
         Assert.NotEmpty(results);
-        Assert.All(results, option =>
-        {
-            Assert.Equal(5, option.Nights);
-            Assert.Equal(option.PerNightRate * 5, option.TotalPrice);
-        });
+        Assert.All(results, o => Assert.Equal(RoomType.Suite, o.RoomType));
+    }
+
+    [Theory]
+    [InlineData("london")]
+    [InlineData("LONDON")]
+    public async Task Matches_destination_case_insensitively(string city)
+    {
+        var provider = new PremierStaysProvider();
+
+        var results = await provider.SearchAsync(Criteria(city));
+
+        Assert.NotEmpty(results);
     }
 }

@@ -3,62 +3,86 @@ using HotelStay.Api.Domain;
 namespace HotelStay.Api.Providers;
 
 /// <summary>
-/// Deterministic stub provider returning minimal-detail rooms. Source data
-/// mimics a snake_case upstream feed; unavailable rooms are filtered out.
+/// Deterministic stub provider with minimal-detail inventory (rate and policy
+/// only). Source data mimics a snake_case upstream feed; rows flagged
+/// <c>available = false</c> are filtered out. Only hotels in the requested city
+/// are returned. Does not operate in every city (e.g. New York, Tokyo) — useful
+/// for exercising partial / single-provider results.
 /// </summary>
 public sealed class BudgetNestsProvider : IHotelProvider
 {
-    public string Name => "BudgetNests";
+    public string ProviderId => "BudgetNests";
 
-    // snake_case-style source record, as a raw upstream feed would expose it.
-    private sealed record BudgetNestsSourceRoom(
-        string room_id,
+    // snake_case-style raw feed, as an upstream API would expose it.
+    private sealed record BudgetNestsHotel(
+        string hotel_code,
+        string hotel_name,
+        string city,
+        BudgetNestsOffer[] offers);
+
+    private sealed record BudgetNestsOffer(
         string room_type,
         decimal price_per_night,
         string policy,
         bool available);
 
-    // Fixed, deterministic inventory — note the unavailable Suite row.
-    private static readonly IReadOnlyList<BudgetNestsSourceRoom> Source = new[]
+    // Fixed, deterministic inventory. Note the unavailable London Suite row and
+    // the absence of New York / Tokyo (only PremierStays serves those).
+    private static readonly IReadOnlyList<BudgetNestsHotel> Source = new[]
     {
-        new BudgetNestsSourceRoom("BN-STD-001", "Standard", 65.00m, "Flexible", true),
-        new BudgetNestsSourceRoom("BN-DLX-001", "Deluxe", 95.00m, "NonRefundable", true),
-        new BudgetNestsSourceRoom("BN-STE-001", "Suite", 150.00m, "Flexible", false),
+        new BudgetNestsHotel("BN-LON-007", "Budget Nest Camden", "London", new[]
+        {
+            new BudgetNestsOffer("standard", 72.50m, "Flexible", true),
+            new BudgetNestsOffer("deluxe", 95.00m, "NonRefundable", true),
+            new BudgetNestsOffer("suite", 140.00m, "Flexible", false),
+        }),
+        new BudgetNestsHotel("BN-MAN-003", "Budget Nest Manchester", "Manchester", new[]
+        {
+            new BudgetNestsOffer("standard", 60.00m, "Flexible", true),
+            new BudgetNestsOffer("deluxe", 88.00m, "Flexible", true),
+        }),
+        new BudgetNestsHotel("BN-PAR-002", "Budget Nest Paris", "Paris", new[]
+        {
+            new BudgetNestsOffer("standard", 88.00m, "Flexible", true),
+            new BudgetNestsOffer("suite", 165.00m, "NonRefundable", false),
+        }),
     };
 
-    public Task<IReadOnlyList<HotelRoomOption>> SearchAsync(
-        HotelSearchRequest request,
-        CancellationToken cancellationToken)
+    public Task<IReadOnlyList<HotelOffer>> SearchAsync(
+        SearchCriteria criteria,
+        CancellationToken cancellationToken = default)
     {
-        var nights = request.CheckOut.DayNumber - request.CheckIn.DayNumber;
-
-        var results = Source
-            .Where(source => source.available)
-            .Select(MapToOption(request.Destination, nights))
-            .Where(option => request.RoomType is null || option.RoomType == request.RoomType)
+        var offers = Source
+            .Where(hotel => string.Equals(hotel.city, criteria.Destination, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(hotel => hotel.offers
+                .Where(offer => offer.available)
+                .Select(offer => Normalize(hotel, offer)))
+            .Where(offer => criteria.RoomType is null || offer.RoomType == criteria.RoomType)
             .ToList();
 
-        return Task.FromResult<IReadOnlyList<HotelRoomOption>>(results);
+        return Task.FromResult<IReadOnlyList<HotelOffer>>(offers);
     }
 
-    private Func<BudgetNestsSourceRoom, HotelRoomOption> MapToOption(string destination, int nights) =>
-        source => new HotelRoomOption(
-            Id: source.room_id,
-            Provider: Name,
-            Destination: destination,
-            RoomType: ParseRoomType(source.room_type),
-            PerNightRate: source.price_per_night,
-            TotalPrice: source.price_per_night * nights,
-            Nights: nights,
-            CancellationPolicy: MapCancellationPolicy(source.policy),
+    private HotelOffer Normalize(BudgetNestsHotel hotel, BudgetNestsOffer offer) =>
+        new(
+            ProviderId: ProviderId,
+            HotelId: hotel.hotel_code,
+            HotelName: hotel.hotel_name,
+            City: hotel.city,
+            RoomType: ParseRoomType(offer.room_type),
+            PricePerNight: offer.price_per_night,
+            Currency: "GBP",
+            AvailableRooms: null,   // minimal provider does not supply room counts
+            Description: null,      // minimal provider supplies no description
+            CancellationPolicy: MapCancellationPolicy(offer.policy),
             Amenities: Array.Empty<string>(),
-            StarRating: 3);
+            StarRating: null);
 
-    private static RoomType ParseRoomType(string value) => value switch
+    private static RoomType ParseRoomType(string value) => value.ToLowerInvariant() switch
     {
-        "Standard" => RoomType.Standard,
-        "Deluxe" => RoomType.Deluxe,
-        "Suite" => RoomType.Suite,
+        "standard" => RoomType.Standard,
+        "deluxe" => RoomType.Deluxe,
+        "suite" => RoomType.Suite,
         _ => throw new InvalidOperationException($"Unknown room type '{value}'.")
     };
 

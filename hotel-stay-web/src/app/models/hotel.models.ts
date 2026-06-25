@@ -19,45 +19,80 @@ export interface HotelSearchRequest {
   roomType?: RoomType;
 }
 
-export interface HotelRoomOption {
-  id: string;
-  provider: string;
-  destination: string;
+// A single normalized, bookable offer (matches backend HotelOffer).
+export interface HotelOffer {
+  providerId: string;
+  hotelId: string;
+  hotelName: string;
+  city: string;
   roomType: RoomType;
-  perNightRate: number;
-  totalPrice: number;
-  nights: number;
+  pricePerNight: number;
+  currency: string;
+  availableRooms: number | null;
+  description: string | null;
   cancellationPolicy: CancellationPolicy;
   amenities: string[];
-  starRating: number;
+  starRating: number | null;
 }
 
-export interface ReserveRoomRequest {
-  roomId: string;
-  provider: string;
+// Search response wrapper (matches backend SearchResponse).
+export interface SearchResponse {
   destination: string;
   checkIn: string;
   checkOut: string;
-  roomType: RoomType;
-  totalPrice: number;
-  guestName: string;
-  documentType: DocumentType;
-  documentNumber: string;
-  cancellationPolicy: CancellationPolicy;
+  nights: number;
+  results: HotelOffer[];
 }
 
-export interface ReservationResponse {
+export interface GuestRequest {
+  fullName: string;
+  documentType: DocumentType;
+  documentNumber: string;
+}
+
+export interface ReserveRequest {
+  providerId: string;
+  hotelId: string;
+  hotelName: string;
+  city: string;
+  roomType: RoomType;
+  pricePerNight: number;
+  currency: string;
+  checkIn: string;
+  checkOut: string;
+  cancellationPolicy: CancellationPolicy;
+  guest: GuestRequest;
+}
+
+export interface ReservationGuest {
+  fullName: string;
+  documentType: DocumentType;
+}
+
+// Confirmed reservation (matches backend Reservation response shape).
+export interface Reservation {
   reference: string;
-  guestName: string;
-  provider: string;
-  destination: string;
+  providerId: string;
+  hotelId: string;
+  hotelName: string;
+  city: string;
+  roomType: RoomType;
+  pricePerNight: number;
+  currency: string;
   checkIn: string;
   checkOut: string;
-  roomType: RoomType;
+  nights: number;
   totalPrice: number;
-  cancellationPolicy: CancellationPolicy;
-  documentType: DocumentType;
-  documentNumber: string;
+  cancellationPolicy: CancellationPolicy | null;
+  guest: ReservationGuest;
+  createdAt: string;
+}
+
+// Consistent error envelope returned by the API on non-2xx responses.
+export interface ApiError {
+  status: number;
+  error: string;
+  message: string;
 }
 
 // Human-friendly labels for cancellation policies.

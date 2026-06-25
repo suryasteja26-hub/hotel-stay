@@ -9,8 +9,8 @@ import {
 } from '@angular/forms';
 import {
   DocumentType,
-  HotelRoomOption,
-  ReserveRoomRequest,
+  HotelOffer,
+  ReserveRequest,
 } from '../models/hotel.models';
 import { DestinationRulesService } from '../services/destination-rules.service';
 
@@ -20,10 +20,10 @@ import { DestinationRulesService } from '../services/destination-rules.service';
   imports: [ReactiveFormsModule, CurrencyPipe],
   template: `
     <form class="card reservation-form" [formGroup]="form" (ngSubmit)="onSubmit()">
-      <h3>Reserve: {{ selectedOption.roomType }} — {{ selectedOption.provider }}</h3>
+      <h3>Reserve: {{ offer.hotelName }} — {{ offer.roomType }} ({{ offer.providerId }})</h3>
       <p class="reservation-form__summary">
-        {{ selectedOption.destination }} · {{ checkIn }} → {{ checkOut }} ·
-        {{ selectedOption.totalPrice | currency: 'GBP' }} total
+        {{ offer.city }} · {{ checkIn }} → {{ checkOut }} ·
+        {{ totalPrice | currency: offer.currency }} total
       </p>
 
       <div class="field">
@@ -61,11 +61,12 @@ import { DestinationRulesService } from '../services/destination-rules.service';
   `,
 })
 export class ReservationFormComponent implements OnInit {
-  @Input({ required: true }) selectedOption!: HotelRoomOption;
+  @Input({ required: true }) offer!: HotelOffer;
   @Input({ required: true }) checkIn!: string;
   @Input({ required: true }) checkOut!: string;
+  @Input({ required: true }) nights!: number;
   @Input() submitting = false;
-  @Output() reserve = new EventEmitter<ReserveRoomRequest>();
+  @Output() reserve = new EventEmitter<ReserveRequest>();
   @Output() cancel = new EventEmitter<void>();
 
   private readonly fb = inject(FormBuilder);
@@ -81,25 +82,29 @@ export class ReservationFormComponent implements OnInit {
   );
 
   ngOnInit(): void {
-    // selectedOption is now bound; re-run the cross-field validator against it.
+    // offer is now bound; re-run the cross-field validator against it.
     this.form.updateValueAndValidity();
   }
 
+  get totalPrice(): number {
+    return this.offer.pricePerNight * this.nights;
+  }
+
   get isInternational(): boolean {
-    return this.rules.isInternational(this.selectedOption.destination);
+    return this.rules.isInternational(this.offer.city);
   }
 
   private documentAcceptedValidator(group: AbstractControl): ValidationErrors | null {
     // Runs once at construction before @Input bindings are applied, so guard
-    // against selectedOption not being set yet.
-    if (!this.selectedOption) {
+    // against offer not being set yet.
+    if (!this.offer) {
       return null;
     }
     const documentType = group.get('documentType')?.value as DocumentType;
     if (!documentType) {
       return null;
     }
-    return this.rules.isDocumentAccepted(this.selectedOption.destination, documentType)
+    return this.rules.isDocumentAccepted(this.offer.city, documentType)
       ? null
       : { documentNotAccepted: true };
   }
@@ -111,20 +116,24 @@ export class ReservationFormComponent implements OnInit {
     }
 
     const value = this.form.getRawValue();
-    const option = this.selectedOption;
+    const offer = this.offer;
 
     this.reserve.emit({
-      roomId: option.id,
-      provider: option.provider,
-      destination: option.destination,
+      providerId: offer.providerId,
+      hotelId: offer.hotelId,
+      hotelName: offer.hotelName,
+      city: offer.city,
+      roomType: offer.roomType,
+      pricePerNight: offer.pricePerNight,
+      currency: offer.currency,
       checkIn: this.checkIn,
       checkOut: this.checkOut,
-      roomType: option.roomType,
-      totalPrice: option.totalPrice,
-      guestName: value.guestName!.trim(),
-      documentType: value.documentType!,
-      documentNumber: value.documentNumber!.trim(),
-      cancellationPolicy: option.cancellationPolicy,
+      cancellationPolicy: offer.cancellationPolicy,
+      guest: {
+        fullName: value.guestName!.trim(),
+        documentType: value.documentType!,
+        documentNumber: value.documentNumber!.trim(),
+      },
     });
   }
 }

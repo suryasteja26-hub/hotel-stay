@@ -68,17 +68,22 @@ public enum TravelScope { Domestic, International }
 
 public enum DocumentType { NationalId, Passport }
 
+public enum CancellationPolicy { FreeCancellation48Hours, Flexible24Hours, NonRefundable }
+
 // A single normalized, bookable offer returned by search.
 public record HotelOffer(
-    string ProviderId,        // "PremierStays" | "BudgetNests" | ...
-    string HotelId,           // provider-scoped id, kept stable for reservation
+    string ProviderId,                    // "PremierStays" | "BudgetNests" | ...
+    string HotelId,                       // provider-scoped id, kept stable for reservation
     string HotelName,
     string City,
     RoomType RoomType,
-    decimal PricePerNight,    // in fixed currency (GBP)
-    string Currency,          // "GBP"
-    int? AvailableRooms,      // null when provider does not supply it (BudgetNests)
-    string? Description       // null/empty for minimal providers
+    decimal PricePerNight,                // in fixed currency (GBP)
+    string Currency,                      // "GBP"
+    int? AvailableRooms,                  // null when provider does not supply it (BudgetNests)
+    string? Description,                  // null/empty for minimal providers
+    CancellationPolicy CancellationPolicy,
+    IReadOnlyList<string> Amenities,      // empty for minimal providers
+    int? StarRating                       // null for minimal providers
 );
 ```
 
@@ -126,12 +131,14 @@ public record Reservation(
     string Currency,
     DateOnly CheckIn,
     DateOnly CheckOut,
-    int Nights,               // derived: CheckOut - CheckIn
-    decimal TotalPrice,       // derived: Nights * PricePerNight
+    int Nights,                          // derived: CheckOut - CheckIn
+    decimal TotalPrice,                  // derived: Nights * PricePerNight
+    CancellationPolicy? CancellationPolicy,
     Guest Guest,
     DateTimeOffset CreatedAt
 );
 
+// DocumentNumber is captured for validation but never serialized back in responses.
 public record Guest(
     string FullName,
     DocumentType DocumentType,
@@ -228,7 +235,10 @@ Search aggregated, normalized availability.
       "pricePerNight": 189.00,
       "currency": "GBP",
       "availableRooms": 4,
-      "description": "King bed, river view, breakfast included"
+      "description": "King bed, river view, breakfast included",
+      "cancellationPolicy": "FreeCancellation48Hours",
+      "amenities": ["WiFi", "Air Conditioning", "Breakfast", "City View", "Minibar"],
+      "starRating": 5
     },
     {
       "providerId": "BudgetNests",
@@ -239,7 +249,10 @@ Search aggregated, normalized availability.
       "pricePerNight": 72.50,
       "currency": "GBP",
       "availableRooms": null,
-      "description": null
+      "description": null,
+      "cancellationPolicy": "Flexible24Hours",
+      "amenities": [],
+      "starRating": null
     }
   ]
 }
@@ -268,6 +281,7 @@ Create a reservation against a quoted offer.
   "currency": "GBP",
   "checkIn": "2026-07-10",
   "checkOut": "2026-07-13",
+  "cancellationPolicy": "FreeCancellation48Hours",
   "guest": {
     "fullName": "Jane Doe",
     "documentType": "Passport",
@@ -291,6 +305,7 @@ Create a reservation against a quoted offer.
   "pricePerNight": 189.00,
   "totalPrice": 567.00,
   "currency": "GBP",
+  "cancellationPolicy": "FreeCancellation48Hours",
   "guest": { "fullName": "Jane Doe", "documentType": "Passport" },
   "createdAt": "2026-06-23T12:30:00Z"
 }
@@ -330,8 +345,9 @@ All non-2xx responses use a consistent shape (`ProblemDetails`-compatible):
 
 ### 6.2 Reserve (`POST /hotels/reserve`) → 400 on structural failure
 
-- Required: `providerId`, `hotelId`, `roomType`, `checkIn`, `checkOut`, `guest.fullName`,
-  `guest.documentType`, `guest.documentNumber`, `pricePerNight`.
+- Required: `providerId`, `hotelId`, `hotelName`, `city`, `roomType`, `checkIn`, `checkOut`,
+  `guest.fullName`, `guest.documentType`, `guest.documentNumber`, `pricePerNight`.
+- `pricePerNight` must be greater than zero.
 - Dates parse and `checkOut` strictly after `checkIn`.
 
 ### 6.3 Document rules → 422 on mismatch

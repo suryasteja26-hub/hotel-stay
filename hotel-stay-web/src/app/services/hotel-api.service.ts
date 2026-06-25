@@ -3,10 +3,10 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 import {
-  HotelRoomOption,
   HotelSearchRequest,
-  ReservationResponse,
-  ReserveRoomRequest,
+  Reservation,
+  ReserveRequest,
+  SearchResponse,
 } from '../models/hotel.models';
 
 @Injectable({ providedIn: 'root' })
@@ -14,7 +14,7 @@ export class HotelApiService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = environment.apiBaseUrl;
 
-  search(request: HotelSearchRequest): Observable<HotelRoomOption[]> {
+  search(request: HotelSearchRequest): Observable<SearchResponse> {
     let params = new HttpParams()
       .set('destination', request.destination)
       .set('checkIn', request.checkIn)
@@ -24,15 +24,15 @@ export class HotelApiService {
       params = params.set('roomType', request.roomType);
     }
 
-    return this.http.get<HotelRoomOption[]>(`${this.baseUrl}/hotels/search`, { params });
+    return this.http.get<SearchResponse>(`${this.baseUrl}/hotels/search`, { params });
   }
 
-  reserve(request: ReserveRoomRequest): Observable<ReservationResponse> {
-    return this.http.post<ReservationResponse>(`${this.baseUrl}/hotels/reserve`, request);
+  reserve(request: ReserveRequest): Observable<Reservation> {
+    return this.http.post<Reservation>(`${this.baseUrl}/hotels/reserve`, request);
   }
 
-  getReservation(reference: string): Observable<ReservationResponse> {
-    return this.http.get<ReservationResponse>(
+  getReservation(reference: string): Observable<Reservation> {
+    return this.http.get<Reservation>(
       `${this.baseUrl}/hotels/reservation/${encodeURIComponent(reference)}`,
     );
   }

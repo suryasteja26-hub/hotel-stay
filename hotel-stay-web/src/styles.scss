@@ -167,7 +167,13 @@ button {
 }
 
 .room-card__title {
-  margin: 0.5rem 0;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.room-card__city {
+  margin: 0 0 0.5rem;
+  color: #6b7280;
+  font-size: 0.85rem;
 }
 
 .room-card__stars {

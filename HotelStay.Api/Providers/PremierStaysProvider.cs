@@ -3,62 +3,93 @@ using HotelStay.Api.Domain;
 namespace HotelStay.Api.Providers;
 
 /// <summary>
-/// Deterministic stub provider returning full-detail, always-available rooms.
-/// Source data mimics a PascalCase upstream feed and is normalized on read.
+/// Deterministic stub provider with full-detail inventory (rate, cancellation
+/// policy, amenities, star rating). Source data mimics a PascalCase upstream
+/// feed and is always available. Only hotels in the requested city are returned.
 /// </summary>
 public sealed class PremierStaysProvider : IHotelProvider
 {
-    public string Name => "PremierStays";
+    public string ProviderId => "PremierStays";
 
-    // PascalCase-style source record, as a raw upstream feed would expose it.
-    private sealed record PremierStaysSourceRoom(
-        string RoomId,
+    // PascalCase-style raw feed, as an upstream API would expose it.
+    private sealed record PremierStaysHotel(
+        string HotelCode,
+        string HotelName,
+        string City,
+        PremierStaysRoom[] Rooms);
+
+    private sealed record PremierStaysRoom(
         string RoomType,
         decimal NightlyRate,
+        int RoomsLeft,
         string CancellationPolicy,
         string[] Amenities,
-        int StarRating);
+        int StarRating,
+        string Description);
 
-    // Fixed, deterministic inventory — every room is available.
-    private static readonly IReadOnlyList<PremierStaysSourceRoom> Source = new[]
+    private static readonly string[] StandardAmenities = { "WiFi", "Air Conditioning", "Breakfast" };
+    private static readonly string[] DeluxeAmenities = { "WiFi", "Air Conditioning", "Breakfast", "City View", "Minibar" };
+    private static readonly string[] SuiteAmenities = { "WiFi", "Air Conditioning", "Breakfast", "Lounge Access", "Minibar", "Spa" };
+
+    // Fixed, deterministic inventory keyed implicitly by City. Note coverage:
+    // London/Manchester (domestic) and Paris/New York/Tokyo (international).
+    private static readonly IReadOnlyList<PremierStaysHotel> Source = new[]
     {
-        new PremierStaysSourceRoom(
-            "PS-STD-001", "Standard", 120.00m, "FreeCancellation",
-            new[] { "WiFi", "Air Conditioning", "Breakfast" }, 4),
-        new PremierStaysSourceRoom(
-            "PS-DLX-001", "Deluxe", 185.00m, "FreeCancellation",
-            new[] { "WiFi", "Air Conditioning", "Breakfast", "City View", "Minibar" }, 4),
-        new PremierStaysSourceRoom(
-            "PS-STE-001", "Suite", 320.00m, "NonRefundable",
-            new[] { "WiFi", "Air Conditioning", "Breakfast", "Lounge Access", "Minibar", "Spa" }, 5),
+        new PremierStaysHotel("PS-LON-001", "Premier Thames View", "London", new[]
+        {
+            new PremierStaysRoom("Standard", 120.00m, 6, "FreeCancellation", StandardAmenities, 4, "Queen bed, city view, breakfast included"),
+            new PremierStaysRoom("Deluxe", 189.00m, 4, "FreeCancellation", DeluxeAmenities, 5, "King bed, river view, breakfast included"),
+            new PremierStaysRoom("Suite", 320.00m, 2, "NonRefundable", SuiteAmenities, 5, "Two-room suite, river view, lounge access"),
+        }),
+        new PremierStaysHotel("PS-MAN-001", "Premier Manchester Central", "Manchester", new[]
+        {
+            new PremierStaysRoom("Standard", 95.00m, 8, "FreeCancellation", StandardAmenities, 4, "Queen bed, breakfast included"),
+            new PremierStaysRoom("Deluxe", 150.00m, 3, "FreeCancellation", DeluxeAmenities, 4, "King bed, city view, breakfast included"),
+        }),
+        new PremierStaysHotel("PS-PAR-001", "Premier Rive Gauche", "Paris", new[]
+        {
+            new PremierStaysRoom("Deluxe", 210.00m, 5, "FreeCancellation", DeluxeAmenities, 5, "King bed, Eiffel view, breakfast included"),
+            new PremierStaysRoom("Suite", 360.00m, 2, "NonRefundable", SuiteAmenities, 5, "Two-room suite, balcony, lounge access"),
+        }),
+        new PremierStaysHotel("PS-NYC-001", "Premier Midtown", "New York", new[]
+        {
+            new PremierStaysRoom("Standard", 180.00m, 10, "FreeCancellation", StandardAmenities, 4, "Queen bed, skyline view"),
+            new PremierStaysRoom("Deluxe", 260.00m, 4, "NonRefundable", DeluxeAmenities, 5, "King bed, Central Park view, minibar"),
+        }),
+        new PremierStaysHotel("PS-TOK-001", "Premier Shinjuku", "Tokyo", new[]
+        {
+            new PremierStaysRoom("Standard", 130.00m, 12, "FreeCancellation", StandardAmenities, 4, "Twin beds, city view"),
+            new PremierStaysRoom("Suite", 300.00m, 2, "NonRefundable", SuiteAmenities, 5, "Corner suite, skyline view, onsen access"),
+        }),
     };
 
-    public Task<IReadOnlyList<HotelRoomOption>> SearchAsync(
-        HotelSearchRequest request,
-        CancellationToken cancellationToken)
+    public Task<IReadOnlyList<HotelOffer>> SearchAsync(
+        SearchCriteria criteria,
+        CancellationToken cancellationToken = default)
     {
-        var nights = request.CheckOut.DayNumber - request.CheckIn.DayNumber;
-
-        var results = Source
-            .Select(MapToOption(request.Destination, nights))
-            .Where(option => request.RoomType is null || option.RoomType == request.RoomType)
+        var offers = Source
+            .Where(hotel => string.Equals(hotel.City, criteria.Destination, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(hotel => hotel.Rooms.Select(room => Normalize(hotel, room)))
+            .Where(offer => criteria.RoomType is null || offer.RoomType == criteria.RoomType)
             .ToList();
 
-        return Task.FromResult<IReadOnlyList<HotelRoomOption>>(results);
+        return Task.FromResult<IReadOnlyList<HotelOffer>>(offers);
     }
 
-    private Func<PremierStaysSourceRoom, HotelRoomOption> MapToOption(string destination, int nights) =>
-        source => new HotelRoomOption(
-            Id: source.RoomId,
-            Provider: Name,
-            Destination: destination,
-            RoomType: ParseRoomType(source.RoomType),
-            PerNightRate: source.NightlyRate,
-            TotalPrice: source.NightlyRate * nights,
-            Nights: nights,
-            CancellationPolicy: MapCancellationPolicy(source.CancellationPolicy),
-            Amenities: source.Amenities,
-            StarRating: source.StarRating);
+    private HotelOffer Normalize(PremierStaysHotel hotel, PremierStaysRoom room) =>
+        new(
+            ProviderId: ProviderId,
+            HotelId: hotel.HotelCode,
+            HotelName: hotel.HotelName,
+            City: hotel.City,
+            RoomType: ParseRoomType(room.RoomType),
+            PricePerNight: room.NightlyRate,
+            Currency: "GBP",
+            AvailableRooms: room.RoomsLeft,
+            Description: room.Description,
+            CancellationPolicy: MapCancellationPolicy(room.CancellationPolicy),
+            Amenities: room.Amenities,
+            StarRating: room.StarRating);
 
     private static RoomType ParseRoomType(string value) => value switch
     {

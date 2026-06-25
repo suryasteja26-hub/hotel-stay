@@ -4,7 +4,7 @@ namespace HotelStay.Api.Storage;
 
 public interface IReservationStore
 {
-    void Save(ReservationResponse reservation);
+    void Save(Reservation reservation);
 
-    ReservationResponse? Get(string reference);
+    Reservation? Get(string reference);
 }

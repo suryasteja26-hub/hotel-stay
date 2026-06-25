@@ -1,5 +1,5 @@
 import { Component, EventEmitter, Input, Output, computed, signal } from '@angular/core';
-import { HotelRoomOption } from '../models/hotel.models';
+import { HotelOffer } from '../models/hotel.models';
 import { RoomOptionCardComponent } from './room-option-card.component';
 
 type SortDir = 'asc' | 'desc';
@@ -11,7 +11,7 @@ type SortDir = 'asc' | 'desc';
   template: `
     <div class="results">
       <div class="results__bar">
-        <span>{{ options.length }} room{{ options.length === 1 ? '' : 's' }} found</span>
+        <span>{{ offers.length }} room{{ offers.length === 1 ? '' : 's' }} found</span>
         <label class="results__sort">
           Sort by total price
           <select [value]="sortDir()" (change)="onSortChange($event)">
@@ -22,31 +22,39 @@ type SortDir = 'asc' | 'desc';
       </div>
 
       <div class="results__grid">
-        @for (option of sortedOptions(); track option.id) {
-          <app-room-option-card [option]="option" (select)="select.emit($event)" />
+        @for (offer of sortedOffers(); track trackOffer(offer)) {
+          <app-room-option-card [offer]="offer" [nights]="nights" (select)="select.emit($event)" />
         }
       </div>
     </div>
   `,
 })
 export class ResultsListComponent {
-  private readonly _options = signal<HotelRoomOption[]>([]);
+  private readonly _offers = signal<HotelOffer[]>([]);
   readonly sortDir = signal<SortDir>('asc');
 
   @Input({ required: true })
-  set options(value: HotelRoomOption[]) {
-    this._options.set(value ?? []);
+  set offers(value: HotelOffer[]) {
+    this._offers.set(value ?? []);
   }
-  get options(): HotelRoomOption[] {
-    return this._options();
+  get offers(): HotelOffer[] {
+    return this._offers();
   }
 
-  @Output() select = new EventEmitter<HotelRoomOption>();
+  // Nights is constant across a result set, so sorting by pricePerNight is
+  // equivalent to sorting by total — kept explicit for clarity.
+  @Input({ required: true }) nights = 0;
 
-  readonly sortedOptions = computed(() => {
+  @Output() select = new EventEmitter<HotelOffer>();
+
+  readonly sortedOffers = computed(() => {
     const dir = this.sortDir() === 'asc' ? 1 : -1;
-    return [...this._options()].sort((a, b) => (a.totalPrice - b.totalPrice) * dir);
+    return [...this._offers()].sort((a, b) => (a.pricePerNight - b.pricePerNight) * dir);
   });
+
+  trackOffer(offer: HotelOffer): string {
+    return `${offer.providerId}-${offer.hotelId}-${offer.roomType}`;
+  }
 
   onSortChange(event: Event): void {
     this.sortDir.set((event.target as HTMLSelectElement).value as SortDir);

@@ -9,12 +9,12 @@ namespace HotelStay.Api.Storage;
 /// </summary>
 public sealed class InMemoryReservationStore : IReservationStore
 {
-    private readonly ConcurrentDictionary<string, ReservationResponse> _reservations =
+    private readonly ConcurrentDictionary<string, Reservation> _reservations =
         new(StringComparer.OrdinalIgnoreCase);
 
-    public void Save(ReservationResponse reservation) =>
+    public void Save(Reservation reservation) =>
         _reservations[reservation.Reference] = reservation;
 
-    public ReservationResponse? Get(string reference) =>
+    public Reservation? Get(string reference) =>
         _reservations.TryGetValue(reference, out var reservation) ? reservation : null;
 }
