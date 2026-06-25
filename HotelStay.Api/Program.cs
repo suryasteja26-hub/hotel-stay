@@ -3,6 +3,7 @@ using HotelStay.Api.Domain;
 using HotelStay.Api.Providers;
 using HotelStay.Api.Services;
 using HotelStay.Api.Storage;
+using Microsoft.AspNetCore.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -38,6 +39,25 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors(AngularCorsPolicy);
 
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        var exceptionHandlerFeature = context.Features.Get<IExceptionHandlerFeature>();
+        var error = exceptionHandlerFeature?.Error;
+
+        context.Response.StatusCode = 500;
+        context.Response.ContentType = "application/json";
+
+        var apiError = new ApiError(
+            Status: 500,
+            Error: "UnhandledException",
+            Message: error?.Message ?? "An unexpected error occurred.");
+
+        await context.Response.WriteAsJsonAsync(apiError);
+    });
+});
+
 app.MapGet("/hotels/destinations", (DestinationRules rules) =>
 {
     var domestic = rules.GetDomestic();
@@ -45,6 +65,11 @@ app.MapGet("/hotels/destinations", (DestinationRules rules) =>
     return Results.Ok(new { domestic, international });
 })
 .WithName("GetDestinations");
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapGet("/test/throw", (HttpContext _) => throw new InvalidOperationException("Test exception"));
+}
 
 // Consistent ProblemDetails-compatible error envelope: { status, error, message }.
 static IResult Problem(int status, string error, string message) =>

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HotelStay.Api.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace HotelStay.Api.Storage;
 
@@ -11,9 +12,11 @@ public sealed class FileReservationStore : IReservationStore
     {
         WriteIndented = false
     };
+    private readonly ILogger<FileReservationStore> _logger;
 
-    public FileReservationStore()
+    public FileReservationStore(ILogger<FileReservationStore> logger)
     {
+        _logger = logger;
         _basePath = Path.Combine(AppContext.BaseDirectory, "Data", "Reservations");
         Directory.CreateDirectory(_basePath);
         _options.Converters.Add(new JsonStringEnumConverter());
@@ -35,8 +38,9 @@ public sealed class FileReservationStore : IReservationStore
             var json = File.ReadAllText(path);
             return JsonSerializer.Deserialize<Reservation>(json, _options);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to read or deserialize reservation file for reference {Reference}.", reference);
             return null;
         }
     }

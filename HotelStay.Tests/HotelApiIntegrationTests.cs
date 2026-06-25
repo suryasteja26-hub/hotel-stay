@@ -111,6 +111,21 @@ public class HotelApiIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Global_exception_handler_returns_structured_error_envelope()
+    {
+        var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/test/throw");
+
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ApiError>(JsonOptions);
+        Assert.NotNull(error);
+        Assert.Equal(500, error!.Status);
+        Assert.Equal("UnhandledException", error.Error);
+        Assert.Contains("Test exception", error.Message);
+    }
+
     // ---- Reserve ----
 
     [Fact]
