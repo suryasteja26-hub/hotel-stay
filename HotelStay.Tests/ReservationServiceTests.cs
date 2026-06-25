@@ -1,6 +1,7 @@
 using HotelStay.Api.Domain;
 using HotelStay.Api.Services;
 using HotelStay.Api.Storage;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace HotelStay.Tests;
 
@@ -12,7 +13,8 @@ public class ReservationServiceTests
         return new ReservationService(
             new DocumentValidator(new DestinationRules()),
             store,
-            TimeProvider.System);
+            TimeProvider.System,
+            NullLogger<ReservationService>.Instance);
     }
 
     private static ReserveRequest ValidRequest(

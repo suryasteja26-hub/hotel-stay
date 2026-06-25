@@ -29,7 +29,7 @@ builder.Services.AddSingleton<HotelSearchService>();
 builder.Services.AddSingleton<DestinationRules>();
 builder.Services.AddSingleton<DocumentValidator>();
 builder.Services.AddSingleton<ReservationService>();
-builder.Services.AddSingleton<IReservationStore, InMemoryReservationStore>();
+builder.Services.AddSingleton<IReservationStore, FileReservationStore>();
 builder.Services.AddSingleton(TimeProvider.System);
 
 var app = builder.Build();
@@ -37,6 +37,14 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors(AngularCorsPolicy);
+
+app.MapGet("/hotels/destinations", (DestinationRules rules) =>
+{
+    var domestic = rules.GetDomestic();
+    var international = rules.GetInternational();
+    return Results.Ok(new { domestic, international });
+})
+.WithName("GetDestinations");
 
 // Consistent ProblemDetails-compatible error envelope: { status, error, message }.
 static IResult Problem(int status, string error, string message) =>

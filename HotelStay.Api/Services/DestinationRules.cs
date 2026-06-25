@@ -20,4 +20,9 @@ public sealed class DestinationRules
 
     public bool IsDomestic(string destination) =>
         Domestic.Contains(destination);
+
+    // Expose lists for client synchronization / inspection.
+    public IReadOnlyList<string> GetDomestic() => Domestic.ToList();
+
+    public IReadOnlyList<string> GetInternational() => International.ToList();
 }

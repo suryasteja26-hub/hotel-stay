@@ -1,5 +1,6 @@
 using HotelStay.Api.Domain;
 using HotelStay.Api.Storage;
+using Microsoft.Extensions.Logging;
 
 namespace HotelStay.Api.Services;
 
@@ -36,23 +37,30 @@ public sealed class ReservationService
     private readonly DocumentValidator _documentValidator;
     private readonly IReservationStore _store;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<ReservationService> _logger;
 
     public ReservationService(
         DocumentValidator documentValidator,
         IReservationStore store,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<ReservationService> logger)
     {
         _documentValidator = documentValidator;
         _store = store;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public ReservationResult Reserve(ReserveRequest request)
     {
+        _logger.LogInformation("Reservation attempt for provider {Provider}, hotel {Hotel}, city {City}",
+            request.ProviderId, request.HotelId, request.City);
+
         // 1. Structural validation (400) — evaluated before document rules (422).
         var structural = ValidateStructure(request);
         if (structural is not null)
         {
+            _logger.LogWarning("Reservation validation failed: {Code} - {Message}", structural.ErrorCode, structural.ErrorMessage);
             return structural;
         }
 
@@ -65,9 +73,12 @@ public sealed class ReservationService
         var documentResult = _documentValidator.Validate(city, guest.DocumentType!.Value);
         if (!documentResult.IsValid)
         {
-            return documentResult.Error == DocumentValidationError.UnknownDestination
+            var result = documentResult.Error == DocumentValidationError.UnknownDestination
                 ? ReservationResult.ValidationFailure("UnknownDestination", documentResult.Message!)
                 : ReservationResult.DocumentMismatch(documentResult.Message!);
+
+            _logger.LogWarning("Reservation document check failed: {Message}", documentResult.Message);
+            return result;
         }
 
         // 3. Build the reservation with server-derived nights and total.
@@ -94,6 +105,8 @@ public sealed class ReservationService
             CreatedAt: _timeProvider.GetUtcNow());
 
         _store.Save(reservation);
+
+        _logger.LogInformation("Reservation succeeded {Reference} for {FullName}", reservation.Reference, reservation.Guest.FullName);
 
         return ReservationResult.Success(reservation);
     }
